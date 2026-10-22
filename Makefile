@@ -1,7 +1,7 @@
 # tcp2rdp-web — build the embedded frontend, then the server binary.
 # Requires: Go 1.22+, Node 18+ (with npm).
 
-VERSION ?= 1.1.0
+VERSION ?= 1.1.1
 LDFLAGS := -s -w -X main.appVersion=$(VERSION)
 
 PLATFORMS := windows-amd64 linux-amd64 linux-arm64 darwin-amd64 darwin-arm64

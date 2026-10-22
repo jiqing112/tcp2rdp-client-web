@@ -24,7 +24,7 @@ import (
 )
 
 // var so -ldflags "-X main.appVersion=…" can stamp release builds.
-var appVersion = "1.1.0"
+var appVersion = "1.1.1"
 
 // The frontend build lands in frontend/dist; `npm run build` refreshes it.
 //

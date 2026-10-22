@@ -28,14 +28,18 @@ tcp2rdp 桌面工作台的 **Web 版**：在浏览器里完成 tcp2rdp（rdp2tcp
 | `tcp2rdp-web-<版本>-darwin-amd64.tar.gz` | macOS Intel |
 | `tcp2rdp-web-<版本>-darwin-arm64.tar.gz` | macOS Apple Silicon |
 
-**打包规则**：每个压缩包里都内置两个二进制 —— 本仓库编译的工作台 `tcp2rdp-web`，
-以及在打包时自动从 [jiqing112/tcp2rdp](https://github.com/jiqing112/tcp2rdp)
+**打包规则**：每个压缩包里都内置本仓库编译的工作台 `tcp2rdp-web`，以及在打包时自动从
+[jiqing112/tcp2rdp](https://github.com/jiqing112/tcp2rdp)
 最新 release 下载的**对应平台**隧道客户端 `rdp2tcp`（Windows 为 `rdp2tcp.exe`），
-两者放在一起，解压后无需再单独下载隧道本体。另附 `README.md`、`LICENSE`，
-发布页还有 `checksums.txt`（SHA-256）可校验完整性。
+两者放在一起，解压后无需再单独下载隧道本体。**Windows 包还内置 TUN 依赖**：
+`tun2socks.exe`（[xjasonlyu/tun2socks](https://github.com/xjasonlyu/tun2socks)
+最新版）与 `wintun.dll`（[wintun.net](https://www.wintun.net/) 官方构建，
+包内附其许可 `wintun-license.txt`），TUN 模式开箱即用。所有包均附 `README.md`、
+`LICENSE`，发布页还有 `checksums.txt`（SHA-256）可校验完整性。
 
-内置的 rdp2tcp 不会随工作台自动升级：想换新版，下载新发布的包即可；或手动替换
-程序目录（或 `bin/`）里的 rdp2tcp，也可以在页面「日志与高级」里直接填它的完整路径。
+内置的 rdp2tcp（以及 Windows 包里的 tun2socks）不会随工作台自动升级：想换新版，
+下载新发布的包即可；或手动替换程序目录（或 `bin/`）里的对应文件，也可以在页面
+「日志与高级」里直接填它的完整路径。
 
 ## 功能
 
@@ -207,7 +211,7 @@ Windows 防火墙默认 `BlockInbound`：监听 `0.0.0.0` 成功后，局域网�
 
 | 平台 | 依赖 | 权限 |
 |---|---|---|
-| Windows | `tun2socks.exe` + `wintun.dll`（放程序目录或 `bin/`，发布包可在上游 Releases 下载） | 管理员身份运行 |
+| Windows | 发布包已内置 `tun2socks.exe` + `wintun.dll`（从源码运行才需自备，下载自 [xjasonlyu/tun2socks](https://github.com/xjasonlyu/tun2socks) 与 [wintun.net](https://www.wintun.net/)，放程序目录或 `bin/`） | 管理员身份运行 |
 | Linux | `tun2socks`（[xjasonlyu/tun2socks](https://github.com/xjasonlyu/tun2socks) 对应架构二进制，重命名放置）+ iproute2 | root（sudo）运行 |
 | macOS | 暂不支持（界面上开关会显示"当前平台不支持"，代理与端口转发不受影响） | — |
 

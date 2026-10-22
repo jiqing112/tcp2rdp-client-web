@@ -9,7 +9,8 @@
 set -euo pipefail
 
 os="$1"; arch="$2"; ver="$3"; out="$4"
-UPSTREAM="https://github.com/jiqing112/tcp2rdp/releases/latest/download"
+# 可用环境变量 PACKAGE_UPSTREAM 覆盖（如镜像站），默认上游官方最新 release 直链
+UPSTREAM="${PACKAGE_UPSTREAM:-https://github.com/jiqing112/tcp2rdp/releases/latest/download}"
 
 exe="tcp2rdp-web"; r2t="rdp2tcp"; suf=""
 if [ "$os" = windows ]; then
@@ -33,6 +34,34 @@ if [ ! -s "$stage/$r2t" ]; then
 fi
 
 cp README.md LICENSE "$stage/"
+
+# TUN 依赖只随 Windows 包分发（macOS 无 TUN，Linux 用户习惯自装工具）：
+# tun2socks.exe（xjasonlyu/tun2socks 最新版）+ wintun.dll（wintun.net 官方构建）。
+# 程序按文件名在程序目录/bin/ 下找 tun2socks.exe 与 wintun.dll，所以要在这一步归位。
+if [ "$os" = windows ]; then
+  echo "==> 下载 TUN 依赖：tun2socks.exe + wintun.dll"
+  mkdir -p pkg/_dl
+  auth=()
+  [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  t2s_json=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "${auth[@]}" \
+    "https://api.github.com/repos/xjasonlyu/tun2socks/releases/latest")
+  t2s_url=$(printf '%s' "$t2s_json" | grep -oE '"browser_download_url": "[^"]*/tun2socks-windows-amd64\.zip"' | head -1 | cut -d'"' -f4)
+  if [ -z "$t2s_url" ]; then
+    echo "错误：没在 xjasonlyu/tun2socks 最新 release 里找到 tun2socks-windows-amd64.zip" >&2
+    exit 1
+  fi
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o pkg/_dl/tun2socks.zip "$t2s_url"
+  unzip -o -q -j pkg/_dl/tun2socks.zip -d "$stage/"
+  mv "$stage/"tun2socks-*.exe "$stage/tun2socks.exe"
+
+  WINTUN_VERSION=0.14.1
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o pkg/_dl/wintun.zip \
+    "https://www.wintun.net/builds/wintun-$WINTUN_VERSION.zip"
+  unzip -o -q -j pkg/_dl/wintun.zip "wintun/bin/amd64/wintun.dll" -d "$stage/"
+  unzip -o -q -j pkg/_dl/wintun.zip "wintun/LICENSE.txt" -d "$stage/"
+  mv "$stage/LICENSE.txt" "$stage/wintun-license.txt"
+fi
+
 chmod +x "$stage/$exe" "$stage/$r2t"
 
 mkdir -p "$out"

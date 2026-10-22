@@ -61,6 +61,17 @@ jobs:
           echo "上游 rdp2tcp 最新版：$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      - name: 查询 tun2socks 最新版本（Windows 包内置）
+        id: t2s
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/xjasonlyu/tun2socks/releases/latest \
+            | grep -oE '"tag_name": "[^"]*"' | cut -d'"' -f4)
+          echo "tun2socks 最新版：$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: 构建前端
         run: cd frontend && npm ci --no-audit --no-fund && npm run build
 
@@ -91,8 +102,10 @@ jobs:
               [jiqing112/tcp2rdp](https://github.com/jiqing112/tcp2rdp) 最新 release 拉取）
             - 平台：windows-amd64 / linux-amd64 / linux-arm64 / darwin-amd64 / darwin-arm64
               （macOS 暂不支持 TUN 模式，代理与端口转发不受影响）
+            - TUN 虚拟网卡模式：Windows 包已内置 `tun2socks ${{ steps.t2s.outputs.tag }}`
+              + `wintun 0.14.1`，开箱即用（需管理员运行）；Linux 需自备
+              [tun2socks](https://github.com/xjasonlyu/tun2socks) 放到程序目录或 `bin/`；
+              不用 TUN 可忽略
             - 校验：`checksums.txt`（SHA-256）
-            - TUN 虚拟网卡模式还需自备 [tun2socks](https://github.com/xjasonlyu/tun2socks)
-              （Windows 另需 wintun.dll），放到程序目录或 `bin/`；不用 TUN 可忽略
           files: |
             dist/*
