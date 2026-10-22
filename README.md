@@ -1,0 +1,158 @@
+# tcp2rdp-client-web
+
+tcp2rdp 桌面工作台的 **Web 版**：在浏览器里完成 tcp2rdp（rdp2tcp）客户端的全部操作 ——
+节点管理、启动/停止隧道、实时状态与日志、服务器探测、分流规则，界面与桌面版
+`tcp2rdp-client` 一致。
+
+技术栈：**Go + Svelte + SQLite**（纯 Go、无 CGO，Windows / Linux 单文件运行）。
+
+```
+浏览器 ──HTTP/SSE──► tcp2rdp-web (Go 内嵌 Svelte 前端)
+                        │  驱动子进程
+                        ▼
+                   rdp2tcp -type client   ──RDP 伪装隧道──►  rdp2tcp -type server
+                        │
+                 127.0.0.1:1080 SOCKS5 / HTTP 代理 / -L -U 转发
+```
+
+## 功能
+
+- **节点管理**：多节点增删改、点击切换（运行中切换自动重连）、每节点独立分流模式
+  （全局 / 规则分流·清单 / 规则分流·仅 IP / 直连）、自定义 IP/域名清单与规则 DNS
+- **隧道控制**：一键启动/停止（Ctrl+Enter），状态机 未连接→连接中→运行中→停止中/出错
+- **实时仪表**：隧道延迟（隧道 / TCP / Ping 三种检测方式）、延迟曲线、上行/下行速率、
+  连接数、运行时长（rdp2tcp `-stat` 输出驱动）
+- **会话日志**：实时推送（SSE）、级别过滤、按 `rdp2tcp` 的输出智能分级，重启后保留尾部
+- **服务器探测**：按 mstsc 的字节序做 RDP 协商 + TLS 握手，报告证书指纹，一键填入 `-pin`
+- **本地 HTTP 代理**：SOCKS5 模式自动在本地起 HTTP 代理桥（Windows 可一键接管系统代理，
+  断开自动还原）
+- **通用设置**：监听地址/端口、代理模式、`-L`/`-U` 端口转发、TLS 指纹、填充、证书
+  校验（TOFU / pin / insecure）等，与桌面版同一套参数
+
+## 构建
+
+依赖：Go 1.22+、Node 18+。
+
+```bash
+make build      # 构建本机二进制（先构建前端再编译 Go，前端嵌入二进制）
+make dist       # 交叉编译 windows-amd64 / linux-amd64 / linux-arm64 到 dist/
+```
+
+手动构建：
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+go build -ldflags "-s -w" -o tcp2rdp-web .
+```
+
+前端开发模式（热更新，API 代理到本机 8080）：
+
+```bash
+go run . -addr 127.0.0.1:8080 &     # 终端 1
+cd frontend && npm run dev          # 终端 2，打开 http://localhost:5173
+```
+
+## 运行
+
+把 `rdp2tcp` 客户端二进制放到程序旁边（**程序目录**、`bin/` 或 `resources/` 均可；
+也可以在页面「日志与高级」里填写完整路径），然后：
+
+```bash
+./tcp2rdp-web                       # 默认 127.0.0.1:8080（或页面里保存的工作台监听设置）
+./tcp2rdp-web -addr 0.0.0.0:8080    # 显式指定监听地址（优先级最高，不写入保存的设置）
+./tcp2rdp-web -token 我的秘密        # 开启访问令牌（URL 加 ?token=我的秘密）
+./tcp2rdp-web -data /var/lib/tcp2rdp -addr 127.0.0.1:8080
+```
+
+浏览器打开显示的地址即可。**工作台的监听范围和端口也可以直接在页面右侧的「工作台」
+卡片里改**（仅本机 ⇄ 局域网、换端口），点「应用」立即生效、无需重启进程，并自动
+跟随放行/撤销防火墙规则；设置持久化，下次启动沿用。显式 `-addr` 参数始终优先于
+保存的设置，且不写入保存值。改端口后当前页面地址会失效，需用新地址重新打开。
+
+Linux 下的 systemd 服务示例：
+
+```ini
+[Unit]
+Description=tcp2rdp web workbench
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tcp2rdp-web
+ExecStart=/opt/tcp2rdp-web/tcp2rdp-web -addr 127.0.0.1:8080
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `-addr` | 上次保存的工作台监听设置（首次 `127.0.0.1:8080`） | HTTP 监听地址；显式指定时优先级最高 |
+| `-data` | 程序目录 `data/` | SQLite 数据库、规则缓存、会话记录目录 |
+| `-token` | 空 | 访问令牌；设置后 API 与页面都要携带（环境变量 `TCP2RDP_TOKEN` 亦可） |
+| `-version` | — | 打印版本 |
+
+> 安全提示：这个页面能启动隧道并读取日志。只绑定 `127.0.0.1`，或加 `-token`；
+> 若监听 `0.0.0.0`，请务必设置令牌并用防火墙限制来源。
+
+### Windows 防火墙自动放行
+
+Windows 防火墙默认 `BlockInbound`：监听 `0.0.0.0` 成功后，局域网设备的连接会被**静默
+丢弃**（超时），而本机回环访问一切正常。本程序会自动管理两条防火墙规则，随每次启动
+重建（delete→add，端口与程序始终匹配）、停止或退出时撤销：
+
+| 规则名 | 何时创建 | 放行内容 |
+|---|---|---|
+| `tcp2rdp-web` | `-addr` 绑定 `0.0.0.0`/`::` 时，或在页面「工作台」卡片切到「局域网」时 | 工作台页面端口（仅限本程序 exe） |
+| `tcp2rdp-web-tunnel` | 隧道以 `0.0.0.0` 监听启动时 | 隧道端口（仅限 rdp2tcp 客户端 exe） |
+
+- 管理员身份运行时直接用 `netsh` 创建；普通权限会弹**一次 UAC 授权**，取消则放行失败
+  （日志有提示，重新启动可再弹）。
+- 规则同时限定 `program=` 与 `localport=`，比系统「允许访问」弹窗生成的更严格。
+- 第三方安全软件（火绒/360 等）自带防火墙不归 `netsh` 管：有规则仍连不通时先查它。
+- Linux 不做任何防火墙操作（交给你自己的 ufw/firewalld）。
+
+诊断：局域网设备 `nc -z -w 3 <主机IP> <端口>` 秒回为通；**等满 3 秒失败**即被防火墙
+丢弃（无规则或程序路径不匹配）；立即拒绝则说明包已到达但该地址没有监听。
+
+## 数据与文件
+
+| 文件 | 说明 |
+|---|---|
+| `data/tcp2rdp-web.db` | SQLite：设置、节点、会话日志尾部（3000 行） |
+| `data/session.txt` | 最近一次会话的完整命令行（可直接粘贴到终端复现） |
+| `data/rules/` | 「在线清单」下载缓存（7 天有效期） |
+| `data/geo-cache.json` | 节点国旗的 IP 归属地缓存 |
+
+## API 一览（供脚本调用）
+
+所有接口返回 JSON；设置 `-token` 后需带 `Authorization: Bearer <token>` 或 `?token=`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/boot` | 一次拿全 info + settings + status + logs |
+| GET/POST | `/api/settings` | 读取 / 保存设置（含节点数组） |
+| POST | `/api/start` · `/api/stop` | 启动（body 为 settings）/ 停止隧道 |
+| POST | `/api/nodes/select` · `/api/nodes/route` | 切换节点 / 切换分流（运行中会重连） |
+| POST | `/api/probe` | 服务器探测（`{"server":"1.2.3.4:3389"}`） |
+| POST | `/api/latency` | 延迟检测设置（`{"mode","target","interval"}`） |
+| POST | `/api/sysproxy` | Windows 系统代理开关（`{"on":true}`） |
+| GET/DELETE | `/api/logs` | 读取 / 清空会话日志 |
+| POST | `/api/weblisten` | 工作台监听热切换（`{"host":"0.0.0.0","port":"8080"}`），联动防火墙并持久化 |
+| GET | `/api/events` | SSE 事件流（`status` / `logs`） |
+| GET | `/api/health` | 健康检查 |
+
+## 与桌面版的差异
+
+- 去掉了 TUN 虚拟网卡模式与系统托盘（浏览器场景不需要）；系统代理接管仅 Windows 生效
+- 设置从 JSON 文件改为 **SQLite** 存储（节点单独成表，日志可跨重启保留尾部）
+- 「选择客户端文件」改为直接填写路径（服务端无文件对话框）
+- 新增可选访问令牌与 `0.0.0.0` 监听（暴露给局域网时建议配合 `-token`）
+
+## 许可
+
+与上游 tcp2rdp / tcp2rdp-client 保持一致（MIT）。

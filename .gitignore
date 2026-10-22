@@ -1,0 +1,23 @@
+# 构建产物
+/tcp2rdp-web
+*.exe
+/dist/
+/frontend/node_modules/
+/frontend/dist/*
+!/frontend/dist/.gitkeep
+
+# 运行时数据（数据库、规则缓存、会话记录）
+/data/
+*.db
+*.db-wal
+*.db-shm
+session.txt
+rdp2tcp.crt
+rdp2tcp.key
+
+# 隧道客户端本体（10MB 二进制，不放仓库；放到程序目录或 bin/ 即可）
+/bin/
+
+# 测试残留
+*.log
+sse-capture.txt
