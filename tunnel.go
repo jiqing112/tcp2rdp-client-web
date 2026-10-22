@@ -60,6 +60,11 @@ type Status struct {
 	SystemProxyActive    bool    `json:"systemProxyActive"`
 	SystemProxySupported bool    `json:"systemProxySupported"`
 	ProxyReady           bool    `json:"proxyReady"`
+	TunEnabled           bool    `json:"tunEnabled"` // user's preference, survives idle/stop
+	TunActive            bool    `json:"tunActive"`  // default routes are installed now
+	TunMessage           string  `json:"tunMessage"` // state or last setup error
+	Admin                bool    `json:"admin"`
+	TunSupported         bool    `json:"tunSupported"`
 	Sampling             bool    `json:"sampling"`
 	LatencyMode          string  `json:"latencyMode"`
 	ProbeTarget          string  `json:"probeTarget"`
@@ -122,8 +127,15 @@ type Tunnel struct {
 	proxyWait  bool // a goroutine is waiting for the tunnel to come up
 	sysSnap    systemProxySnapshot
 	fwPlaced   bool // this session placed a firewall rule (guarded by mu)
-	dataDir    string
-	geo        *geoCache
+
+	tunMu   sync.Mutex // serializes start/stop/self-test
+	tunWait bool       // a goroutine is waiting to install TUN routes
+	tunOn   bool       // default routes installed (guarded by mu)
+	tunMsg  string     // TUN state or last failure (guarded by mu)
+	tun     *tunSession
+
+	dataDir string
+	geo     *geoCache
 }
 
 var (
@@ -334,6 +346,11 @@ func (t *Tunnel) statusLocked() Status {
 	st.SystemProxyActive = t.sysProxy
 	st.SystemProxySupported = systemProxySupported()
 	st.ProxyReady = t.readyLocked()
+	st.TunEnabled = t.settings.TunEnabled
+	st.TunActive = t.tunOn
+	st.TunMessage = t.tunMsg
+	st.Admin = isElevated()
+	st.TunSupported = tunPlatformSupported()
 	if t.state == StateRunning && !t.started.IsZero() {
 		st.UptimeSec = int64(time.Since(t.started).Seconds())
 		st.StartedAt = t.started.Format(time.RFC3339)
@@ -379,6 +396,7 @@ func (t *Tunnel) Start(s Settings) (Status, error) {
 	t.totalUp, t.totalDn, t.prevUp, t.prevDn = 0, 0, 0, 0
 	t.prevStat = time.Time{}
 	t.serverIP = ""
+	t.tunMsg = ""
 	t.mu.Unlock()
 	t.logs.setFilter(s.LogLevel, s.NoLog)
 	t.logs.setQuietTarget(dataPathTarget(s))
@@ -494,6 +512,11 @@ func (t *Tunnel) Start(s Settings) (Status, error) {
 			}
 		} else {
 			t.logs.debugf("本地 HTTP 代理启动失败：%v", err)
+		}
+		if t.Settings().TunEnabled {
+			// TUN also needs the local socks5 port; it installs its own waiter
+			// that first proves the tunnel can carry data.
+			t.startTunWaiter(stop)
 		}
 	}
 	return t.Status(), nil
@@ -795,6 +818,9 @@ func (t *Tunnel) waitLoop(cmd *exec.Cmd, stop chan struct{}) {
 		t.logs.debugf("%s", msg)
 	}
 
+	// A dead tunnel cannot carry TUN traffic: remove its default routes now.
+	t.stopTun()
+
 	t.mu.Lock()
 	proxyWasOn := t.sysProxy
 	bridge := t.bridge
@@ -829,6 +855,9 @@ func (t *Tunnel) takeFwPlaced() bool {
 // turn, so the rules are removed unconditionally — deleting a rule that is not
 // there is a harmless no-op.
 func (t *Tunnel) Shutdown() {
+	// Routes must be gone before the process disappears, otherwise the machine
+	// would keep sending all IPv4 traffic into a tunnel that no longer exists.
+	t.stopTun()
 	_, _ = t.Stop()
 	firewallRemove(FirewallRuleTunnel)
 	firewallRemove(FirewallRuleUI)

@@ -13,7 +13,9 @@
     saveNode,
     scheduleSave,
     setSystemProxy,
+    setTun,
     switchNode,
+    testTun,
     toggleRun,
   } from "./lib/actions";
   import { app, appendLogs, toast } from "./lib/state.svelte";
@@ -121,7 +123,7 @@
 
     <aside class="pane pane--aside">
       <WebCard />
-      <OutboundCard onToggle={setSystemProxy} />
+      <OutboundCard onToggle={setSystemProxy} onToggleTun={setTun} onTestTun={testTun} />
       <LogCard onClear={clearLogs} />
     </aside>
   </main>

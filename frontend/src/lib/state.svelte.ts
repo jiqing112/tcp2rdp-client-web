@@ -7,7 +7,7 @@ import { fallbackSettings, type Info, type LogLine, type Node, type ProbeResult,
 // a $state object on purpose: every component reading a property re-renders
 // when that property changes, with no subscriptions to wire up.
 
-export type Busy = "" | "start" | "stop" | "probe" | "switch" | "route" | "save" | "sysproxy";
+export type Busy = "" | "start" | "stop" | "probe" | "switch" | "route" | "save" | "sysproxy" | "tun";
 
 export interface Toast {
   id: number;
@@ -30,6 +30,7 @@ export const app = $state({
   busy: "" as Busy,
   banner: null as { message: string; tone: "error" | "warn" } | null,
   lastProbe: null as ProbeResult | null,
+  lastTunReport: null as import("./types").TunReport | null,
 
   nodeModal: false as false | "new" | "edit",
   editingNode: null as Node | null,

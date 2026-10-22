@@ -117,6 +117,9 @@ func main() {
 
 	tunnel := NewTunnel(store, sink, events, *dataDir)
 	api := &api{tunnel: tunnel, store: store, hub: events}
+	// A crashed previous run leaves default routes pointing at a dead adapter;
+	// repair that before anything else touches the network.
+	tunnel.CleanupStaleTun()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/boot", api.handleBoot)
@@ -137,6 +140,8 @@ func main() {
 	mux.HandleFunc("/api/probe", api.handleProbe)
 	mux.HandleFunc("/api/latency", api.handleLatency)
 	mux.HandleFunc("/api/sysproxy", api.handleSysProxy)
+	mux.HandleFunc("/api/tun", api.handleTun)
+	mux.HandleFunc("/api/tun/test", api.handleTunTest)
 	mux.HandleFunc("/api/nodes/select", api.handleNodeSelect)
 	mux.HandleFunc("/api/nodes/route", api.handleNodeRoute)
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {

@@ -87,6 +87,7 @@ type Settings struct {
 	LatencyMode   string `json:"latencyMode"`
 	ProbeInterval int    `json:"probeInterval"`
 	SystemProxy   bool   `json:"systemProxy"`
+	TunEnabled    bool   `json:"tunEnabled"` // 预设：连通后接管整机 IPv4 流量
 	HTTPPort      string `json:"httpProxyPort"`
 }
 
@@ -563,7 +564,7 @@ var settingsJSONFields = []string{
 	"listenHost", "listenPort", "socks5", "target", "forwards", "udpForwards",
 	"timeout", "tlsFp", "pad", "padMax", "tick", "pin", "knownHosts", "insecure",
 	"noLog", "logLevel", "binaryPath", "probeTarget", "latencyMode", "probeInterval",
-	"systemProxy", "httpProxyPort",
+	"systemProxy", "tunEnabled", "httpProxyPort",
 }
 
 // Save persists the settings (nodes included) into SQLite.
@@ -572,7 +573,7 @@ func (s Settings) Save(store *Store) error {
 	obj := map[string]json.RawMessage{}
 	for _, f := range settingsJSONFields {
 		switch f {
-		case "socks5", "insecure", "noLog", "systemProxy":
+		case "socks5", "insecure", "noLog", "systemProxy", "tunEnabled":
 			b, _ := json.Marshal(fieldBool(s, f))
 			obj[f] = b
 		case "probeInterval":
@@ -636,6 +637,7 @@ func LoadSettings(store *Store) Settings {
 			}
 		}
 		getBool("systemProxy", &out.SystemProxy)
+		getBool("tunEnabled", &out.TunEnabled)
 		getStr("httpProxyPort", &out.HTTPPort)
 	}
 	if nodes, err := store.LoadNodes(); err == nil && len(nodes) > 0 {
@@ -657,6 +659,8 @@ func fieldBool(s Settings, key string) bool {
 		return s.NoLog
 	case "systemProxy":
 		return s.SystemProxy
+	case "tunEnabled":
+		return s.TunEnabled
 	}
 	return false
 }

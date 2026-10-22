@@ -1,10 +1,10 @@
 module tcp2rdp-client-web
 
-go 1.22
+go 1.26.0
 
 require (
 	golang.org/x/net v0.25.0
-	golang.org/x/sys v0.20.0
+	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.29.10
 )
 

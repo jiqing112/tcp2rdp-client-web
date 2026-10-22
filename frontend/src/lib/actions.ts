@@ -23,15 +23,19 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 export function applyStatus(next: Status): void {
   const prev = lastState;
   lastState = next.state;
+  // Go is the source of truth for the two switches: a preset can be applied
+  // from a waiter, and a switch can move without the page asking.
   app.settings = {
     ...app.settings,
     systemProxy: next.systemProxy,
+    tunEnabled: next.tunEnabled,
   };
   if (next.state === "idle" && next.nodeId && app.settings.nodes.some((n) => n.id === next.nodeId)) {
     app.settings = { ...app.settings, activeNode: next.nodeId };
   }
   if (next.state === "error" && next.message) showBanner(next.message);
   else if (prev && prev !== next.state) hideBanner();
+  if (!next.tunActive) app.lastTunReport = null;
   app.status = next;
 }
 
@@ -290,6 +294,43 @@ export async function setSystemProxy(on: boolean): Promise<void> {
   } catch (err) {
     showBanner(err instanceof Error ? err.message : String(err), "warn");
     throw err;
+  }
+}
+
+// setTun flips the TUN preset; like the proxy switch it may be armed before
+// the tunnel is up, and the routes only install once the tunnel carries data.
+// On error it rethrows so the caller can flip the switch back.
+export async function setTun(on: boolean): Promise<void> {
+  try {
+    applyStatus(await api.setTun(on));
+    toast(
+      on
+        ? app.status?.tunActive
+          ? "TUN 已接管 IPv4 流量"
+          : app.status?.state === "running"
+            ? "已预设：隧道就绪后自动启用 TUN"
+            : "已预设：连接成功后自动启用 TUN"
+        : "TUN 已关闭",
+      on ? "ok" : "info",
+    );
+  } catch (err) {
+    showBanner(err instanceof Error ? err.message : String(err), "warn");
+    throw err;
+  }
+}
+
+// testTun runs the multi-point self-check against the live TUN session.
+export async function testTun(): Promise<void> {
+  if (app.busy) return;
+  app.busy = "tun";
+  try {
+    const report = await api.testTun();
+    app.lastTunReport = report;
+    toast(report.summary, report.ok ? "ok" : "warn", 6000);
+  } catch (err) {
+    showBanner(err instanceof Error ? err.message : String(err), "warn");
+  } finally {
+    app.busy = "";
   }
 }
 

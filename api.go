@@ -220,6 +220,39 @@ func (a *api) handleSysProxy(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, st)
 }
 
+// handleTun flips the TUN preset; handleTunTest runs the multi-point self-test
+// against the live session.
+func (a *api) handleTun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		On bool `json:"on"`
+	}
+	if !a.readBody(w, r, &req) {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	st, err := a.tunnel.SetTun(req.On)
+	if err != nil {
+		a.writeJSONStatus(w, http.StatusBadRequest, map[string]any{
+			"error":  err.Error(),
+			"status": st,
+		})
+		return
+	}
+	a.writeJSON(w, st)
+}
+
+func (a *api) handleTunTest(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	report, err := a.tunnel.TestTun()
+	if err != nil {
+		a.writeErr(w, err)
+		return
+	}
+	a.writeJSON(w, report)
+}
+
 func (a *api) handleLogsGet(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, a.tunnel.Logs())
 }

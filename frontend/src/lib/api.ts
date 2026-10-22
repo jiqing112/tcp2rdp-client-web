@@ -6,6 +6,7 @@ import type {
   ProbeResult,
   Settings,
   Status,
+  TunReport,
 } from "./types";
 
 // api is the thin HTTP layer between the page and the Go server. Every call
@@ -116,6 +117,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ on }),
     }),
+
+  setTun: (on: boolean) =>
+    call<Status>("/api/tun", {
+      method: "POST",
+      body: JSON.stringify({ on }),
+    }),
+
+  testTun: () => call<TunReport>("/api/tun/test", { method: "POST", body: "{}" }),
 
   clearLogs: () => call<{ ok: boolean }>("/api/logs", { method: "DELETE" }),
 

@@ -74,6 +74,26 @@ export interface Status {
   probeInterval: number;
   probeError: string;
   keyLen: number;
+  tunEnabled: boolean; // user's preference, survives idle/stop
+  tunActive: boolean; // default routes are installed now
+  tunMessage: string; // state or last setup error
+  admin: boolean;
+  tunSupported: boolean;
+}
+
+export interface TunCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+  optional: boolean;
+}
+
+export interface TunReport {
+  ok: boolean;
+  summary: string;
+  target: string;
+  at: string;
+  checks: TunCheck[];
 }
 
 export interface LogLine {
