@@ -1,0 +1,2 @@
+# shell 脚本必须 LF，否则 CI 里 bash 会因 \r 报错
+*.sh text eol=lf

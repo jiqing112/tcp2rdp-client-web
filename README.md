@@ -1,10 +1,10 @@
 # tcp2rdp-client-web
 
 tcp2rdp 桌面工作台的 **Web 版**：在浏览器里完成 tcp2rdp（rdp2tcp）客户端的全部操作 ——
-节点管理、启动/停止隧道、实时状态与日志、服务器探测、分流规则，界面与桌面版
-`tcp2rdp-client` 一致。
+节点管理、启动/停止隧道、实时状态与日志、服务器探测、分流规则、TUN 全局接管，
+界面与桌面版 `tcp2rdp-client` 一致。
 
-技术栈：**Go + Svelte + SQLite**（纯 Go、无 CGO，Windows / Linux 单文件运行）。
+技术栈：**Go + Svelte + SQLite**（纯 Go、无 CGO，Windows / Linux / macOS 单文件运行）。
 
 ```
 浏览器 ──HTTP/SSE──► tcp2rdp-web (Go 内嵌 Svelte 前端)
@@ -12,8 +12,30 @@ tcp2rdp 桌面工作台的 **Web 版**：在浏览器里完成 tcp2rdp（rdp2tcp
                         ▼
                    rdp2tcp -type client   ──RDP 伪装隧道──►  rdp2tcp -type server
                         │
-                 127.0.0.1:1080 SOCKS5 / HTTP 代理 / -L -U 转发
+                 127.0.0.1:1080 SOCKS5 / HTTP 代理 / -L -U 转发 / TUN 虚拟网卡
 ```
+
+## 下载
+
+到 [Releases](https://github.com/jiqing112/tcp2rdp-client-web/releases/latest)
+下载对应平台的压缩包，解压即用：
+
+| 包名 | 平台 |
+|---|---|
+| `tcp2rdp-web-<版本>-windows-amd64.zip` | Windows x64 |
+| `tcp2rdp-web-<版本>-linux-amd64.tar.gz` | Linux x64 |
+| `tcp2rdp-web-<版本>-linux-arm64.tar.gz` | Linux ARM64 |
+| `tcp2rdp-web-<版本>-darwin-amd64.tar.gz` | macOS Intel |
+| `tcp2rdp-web-<版本>-darwin-arm64.tar.gz` | macOS Apple Silicon |
+
+**打包规则**：每个压缩包里都内置两个二进制 —— 本仓库编译的工作台 `tcp2rdp-web`，
+以及在打包时自动从 [jiqing112/tcp2rdp](https://github.com/jiqing112/tcp2rdp)
+最新 release 下载的**对应平台**隧道客户端 `rdp2tcp`（Windows 为 `rdp2tcp.exe`），
+两者放在一起，解压后无需再单独下载隧道本体。另附 `README.md`、`LICENSE`，
+发布页还有 `checksums.txt`（SHA-256）可校验完整性。
+
+内置的 rdp2tcp 不会随工作台自动升级：想换新版，下载新发布的包即可；或手动替换
+程序目录（或 `bin/`）里的 rdp2tcp，也可以在页面「日志与高级」里直接填它的完整路径。
 
 ## 功能
 
@@ -37,7 +59,8 @@ tcp2rdp 桌面工作台的 **Web 版**：在浏览器里完成 tcp2rdp（rdp2tcp
 
 ```bash
 make build      # 构建本机二进制（先构建前端再编译 Go，前端嵌入二进制）
-make dist       # 交叉编译 windows-amd64 / linux-amd64 / linux-arm64 到 dist/
+make package    # 打本机平台的发布包（捆绑上游最新 rdp2tcp），输出 dist/
+make dist       # 打全部五个平台的发布包，输出 dist/ 并生成 checksums.txt
 ```
 
 手动构建：
@@ -46,6 +69,17 @@ make dist       # 交叉编译 windows-amd64 / linux-amd64 / linux-arm64 到 dis
 cd frontend && npm install && npm run build && cd ..
 go build -ldflags "-s -w" -o tcp2rdp-web .
 ```
+
+打包规则实现在 [scripts/package.sh](scripts/package.sh)：交叉编译工作台 → 从
+`https://github.com/jiqing112/tcp2rdp/releases/latest/download/` 拉取对应平台的
+rdp2tcp → 连同 README/LICENSE 压成 zip（Windows）或 tar.gz（其余平台，保留可执行位）。
+
+### 发布（自动）
+
+推送 `v*` 标签（或在 Actions 页手动触发 workflow）即运行
+[.github/workflows/release.yml](.github/workflows/release.yml)：
+构建前端 → `go test` → 按 `scripts/package.sh` 的规则打五个平台的包 →
+自动上传到 Releases，生成更新日志，并在说明里记录本次捆绑的上游 rdp2tcp 版本。
 
 前端开发模式（热更新，API 代理到本机 8080）：
 
@@ -56,8 +90,9 @@ cd frontend && npm run dev          # 终端 2，打开 http://localhost:5173
 
 ## 运行
 
-把 `rdp2tcp` 客户端二进制放到程序旁边（**程序目录**、`bin/` 或 `resources/` 均可；
-也可以在页面「日志与高级」里填写完整路径），然后：
+发布包已内置 rdp2tcp；从源码运行时，把 `rdp2tcp` 客户端二进制放到程序旁边
+（**程序目录**、`bin/` 或 `resources/` 均可；也可以在页面「日志与高级」里填写
+完整路径），然后：
 
 ```bash
 ./tcp2rdp-web                       # 默认 127.0.0.1:8080（或页面里保存的工作台监听设置）
@@ -174,6 +209,7 @@ Windows 防火墙默认 `BlockInbound`：监听 `0.0.0.0` 成功后，局域网�
 |---|---|---|
 | Windows | `tun2socks.exe` + `wintun.dll`（放程序目录或 `bin/`，发布包可在上游 Releases 下载） | 管理员身份运行 |
 | Linux | `tun2socks`（[xjasonlyu/tun2socks](https://github.com/xjasonlyu/tun2socks) 对应架构二进制，重命名放置）+ iproute2 | root（sudo）运行 |
+| macOS | 暂不支持（界面上开关会显示"当前平台不支持"，代理与端口转发不受影响） | — |
 
 开启后 tun2socks 的日志会以 `TUN` 前缀出现在会话日志里。
 

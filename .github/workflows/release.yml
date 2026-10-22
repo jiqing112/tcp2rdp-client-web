@@ -1,0 +1,98 @@
+# 发布流程：推送 v* 标签（或在 Actions 页手动触发）自动完成：
+#   前端构建 → go test → 五平台交叉编译 → 每个包捆绑上游
+#   jiqing112/tcp2rdp 最新 release 的对应平台 rdp2tcp → 传到 Releases。
+# 打包规则本体在 scripts/package.sh。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v 前缀，如 1.2.0）；留空则发布 0.0.0-dev.N 预发布'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 解析版本号
+        id: ver
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "ver=${GITHUB_REF_NAME#v}"       >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}"         >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"               >> "$GITHUB_OUTPUT"
+          elif [ -n "$VERSION_INPUT" ]; then
+            echo "ver=${VERSION_INPUT#v}"         >> "$GITHUB_OUTPUT"
+            echo "tag=v${VERSION_INPUT#v}"        >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"               >> "$GITHUB_OUTPUT"
+          else
+            echo "ver=0.0.0-dev.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "tag=v0.0.0-dev.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                >> "$GITHUB_OUTPUT"
+          fi
+
+      # 记录打包时捆绑的是上游哪个版本，写进 Release 说明
+      - name: 查询上游 rdp2tcp 最新版本
+        id: upstream
+        run: |
+          tag=$(basename "$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+            https://github.com/jiqing112/tcp2rdp/releases/latest)")
+          echo "上游 rdp2tcp 最新版：$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: 构建前端
+        run: cd frontend && npm ci --no-audit --no-fund && npm run build
+
+      - name: 测试
+        run: go test ./...
+
+      - name: 打包（捆绑上游最新 rdp2tcp）
+        env:
+          VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          for target in windows-amd64 linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            bash scripts/package.sh "${target%%-*}" "${target#*-}" "$VER" dist
+          done
+          cd dist && sha256sum tcp2rdp-web-* > checksums.txt
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: tcp2rdp-web ${{ steps.ver.outputs.tag }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            工作台 Web 版发布包：解压即用，**已内置对应平台的 rdp2tcp 客户端**，
+            无需再单独下载隧道本体。
+
+            - 内置 rdp2tcp：**${{ steps.upstream.outputs.tag }}**（打包时自动从
+              [jiqing112/tcp2rdp](https://github.com/jiqing112/tcp2rdp) 最新 release 拉取）
+            - 平台：windows-amd64 / linux-amd64 / linux-arm64 / darwin-amd64 / darwin-arm64
+              （macOS 暂不支持 TUN 模式，代理与端口转发不受影响）
+            - 校验：`checksums.txt`（SHA-256）
+            - TUN 虚拟网卡模式还需自备 [tun2socks](https://github.com/xjasonlyu/tun2socks)
+              （Windows 另需 wintun.dll），放到程序目录或 `bin/`；不用 TUN 可忽略
+          files: |
+            dist/*
